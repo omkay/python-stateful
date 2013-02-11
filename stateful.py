@@ -24,8 +24,9 @@ class Stateful(object):
     def get_tasks(self):
         return set([e[0] for e in self.engine.execute("select id from %s" % self.table)])
 
-    def work(self, tasks):
-        new_tasks = set(tasks) - self.get_tasks()
+    def work(self, tasks_list):
+        tasks = dict(((task[0] if isinstance(task, tuple) else task), task) for task in tasks_list)
+        new_tasks = set(tasks.keys()) - self.get_tasks()
 
         if inspect.isgeneratorfunction(self.work_fn):
             gen = self.work_fn()
@@ -34,12 +35,11 @@ class Stateful(object):
 
         for task in new_tasks:
             try: 
-                logger.info("Working on %s" % task)
-                gen.send([task] + list(self.work_args))
+                logger.info("Working on %s" % str(task))
+                gen.send([tasks[task]] + list(self.work_args))
                 self.finish(task)
             except Exception, e:
                 traceback.print_exc()
-                logger.warn("%s: %s" % (task, e))
+                logger.warn("%s: %s" % (str(task), e))
                 sleep(10)
-
 
