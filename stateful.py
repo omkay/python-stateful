@@ -25,13 +25,17 @@ class Stateful(object):
         return set([e[0] for e in self.engine.execute("select id from %s" % self.table)])
 
     def work(self, tasks_list):
+        print tasks_list
         tasks = dict(((task[0] if isinstance(task, tuple) else task), task) for task in tasks_list)
         new_tasks = set(tasks.keys()) - self.get_tasks()
 
-        if inspect.isgeneratorfunction(self.work_fn):
-            gen = self.work_fn()
-        else: gen = work_generator(self.work_fn)
-        gen.send(None)
+        def new_gen():
+            if inspect.isgeneratorfunction(self.work_fn):
+                gen = self.work_fn()
+            else: gen = work_generator(self.work_fn)
+            gen.send(None)
+            return gen
+        gen = new_gen()
 
         for task in new_tasks:
             try: 
@@ -41,5 +45,6 @@ class Stateful(object):
             except Exception, e:
                 traceback.print_exc()
                 logger.warn("%s: %s" % (str(task), e))
+                gen = new_gen()
                 sleep(10)
 
