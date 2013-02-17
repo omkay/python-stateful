@@ -25,7 +25,6 @@ class Stateful(object):
         return set([e[0] for e in self.engine.execute("select id from %s" % self.table)])
 
     def work(self, tasks_list):
-        print tasks_list
         tasks = dict(((task[0] if isinstance(task, tuple) else task), task) for task in tasks_list)
         new_tasks = set(tasks.keys()) - self.get_tasks()
 
