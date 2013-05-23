@@ -3,8 +3,6 @@ from time import sleep
 import traceback
 import inspect
 
-logger = logging.getLogger('stateful')
-
 def work_generator(fn):
     while True:
         args = yield
@@ -12,9 +10,10 @@ def work_generator(fn):
 
 
 class Stateful(object):
-    def __init__(self, engine, work_fn, work_args=[], table="state"):
+    def __init__(self, engine, work_fn, work_args=[], table="state", logger=None):
         self.engine = sqlalchemy.create_engine(engine)
         self.table = table
+        self.logger = logger or logging.getLogger('stateful')
         self.work_fn, self.work_args = work_fn, work_args
         self.engine.execute("CREATE TABLE IF NOT EXISTS %s (id VARCHAR(50) PRIMARY KEY, t TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" % self.table)
 
@@ -37,13 +36,12 @@ class Stateful(object):
         gen = new_gen()
 
         for task in new_tasks:
-            try: 
-                logger.info("Working on %s" % str(task))
+            try:
+                self.logger.info("Working on {}".format(task))
                 gen.send([tasks[task]] + list(self.work_args))
                 self.finish(task)
             except Exception, e:
-                traceback.print_exc()
-                logger.warn("%s: %s" % (str(task), e))
+                self.logger.warn("Error while processing {}".format(task), exc_info=1)
                 gen = new_gen()
                 sleep(10)
 
