@@ -12,14 +12,15 @@ def work_generator(fn):
 
 
 class Stateful(object):
-    def __init__(self, engine, work_fn, work_args=[], table="state"):
+    def __init__(self, engine, work_fn, work_args=[], table="state", sleep=0):
         self.engine = sqlalchemy.create_engine(engine)
         self.table = table
+        self.sleep = sleep
         self.work_fn, self.work_args = work_fn, work_args
         self.engine.execute("CREATE TABLE IF NOT EXISTS %s (id VARCHAR(50) PRIMARY KEY, t TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" % self.table)
 
     def finish(self, id):
-        self.engine.execute('insert into %s  ("id") values (?)' % self.table, id)
+        self.engine.execute('insert into {} (id) values (%s)'.format(self.table), id)
 
     def get_tasks(self):
         return set([e[0] for e in self.engine.execute("select id from %s" % self.table)])
@@ -36,8 +37,11 @@ class Stateful(object):
             return gen
         gen = new_gen()
 
-        for task in new_tasks:
-            try: 
+        for i, task in enumerate(new_tasks):
+            try:
+                if self.sleep:
+                    logger.info("Sleeping {} seconds before next task".format(self.sleep))
+                    sleep(self.sleep)
                 logger.info("Working on %s" % str(task))
                 gen.send([tasks[task]] + list(self.work_args))
                 self.finish(task)
