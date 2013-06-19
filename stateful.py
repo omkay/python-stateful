@@ -41,7 +41,7 @@ class GracefulInterruptHandler(object):
         return True
 
 class Stateful(object):
-    def __init__(self, engine, work_fn, table="state", logger=None, sleep=0, work_kwargs=None, group_fn=None):
+    def __init__(self, engine, work_fn, table="state", logger=None, sleep=0, work_kwargs=None, group_fn=None, task_key_fn=None):
         self.engine = sqlalchemy.create_engine(engine)
         self.table = table
         self.logger = logger or logging.getLogger('stateful')
@@ -49,6 +49,7 @@ class Stateful(object):
         self.work_kwargs = work_kwargs or {}
         self.work_fn = work_fn
         self.group_fn = group_fn
+        self.task_key_fn = task_key_fn or (lambda task: (task[0] if isinstance(task, tuple) else task))
         self.engine.execute("CREATE TABLE IF NOT EXISTS %s (id VARCHAR(50) PRIMARY KEY, t TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" % self.table)
 
     def finish(self, id):
@@ -66,8 +67,7 @@ class Stateful(object):
 
     def work(self, tasks_list):
         finished_tasks = self.get_tasks()
-        get_task_key = lambda task: (task[0] if isinstance(task, tuple) else task)
-        tasks = [task for task in tasks_list if get_task_key(task) not in finished_tasks]
+        tasks = [task for task in tasks_list if self.task_key_fn(task) not in finished_tasks]
         fn = self.worker_group if callable(self.group_fn) else self.worker_nogroup
         return fn(tasks)
 
@@ -80,7 +80,7 @@ class Stateful(object):
                     if i != 0 and self.sleep: sleep(self.sleep)
                     self.logger.info("Working on {}".format(task))
                     gen.send(dict(task=task, **self.work_kwargs))
-                    self.finish(task)
+                    self.finish(self.task_key_fn(task))
                 except Exception:
                     self.logger.warn("Error while processing {}".format(task), exc_info=1)
                     gen = self.get_work_generator()
@@ -99,7 +99,7 @@ class Stateful(object):
                     group = list(group)
                     gen.send(dict(key=key, tasks=group, **self.work_kwargs))
                     for task in group:
-                        self.finish(task)
+                        self.finish(self.task_key_fn(task))
                 except Exception:
                     self.logger.warn("Error while processing {}: {}".format(key, group), exc_info=1)
                     gen = self.get_work_generator()
