@@ -50,13 +50,13 @@ class Stateful(object):
         self.work_fn = work_fn
         self.group_fn = group_fn
         self.task_key_fn = task_key_fn or (lambda task: (task[0] if isinstance(task, tuple) else task))
-        self.engine.execute("CREATE TABLE IF NOT EXISTS %s (id VARCHAR(50) PRIMARY KEY, t TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" % self.table)
+        self.engine.execute("CREATE TABLE IF NOT EXISTS {} (id VARCHAR(50) PRIMARY KEY, t TIMESTAMP DEFAULT CURRENT_TIMESTAMP)".format(self.table))
 
     def finish(self, id):
         self.engine.execute('insert into {} (id) values (%s)'.format(self.table), id)
 
     def get_tasks(self):
-        return set([e[0] for e in self.engine.execute("select id from %s" % self.table)])
+        return set([e[0] for e in self.engine.execute("select id from {}".format(self.table))])
 
     def get_work_generator(self):
         if inspect.isgeneratorfunction(self.work_fn):
@@ -88,15 +88,15 @@ class Stateful(object):
                     sleep(self.sleep*2 or 10)
 
     def worker_group(self, tasks):
-        tasks = tasks.sort(key=self.group_fn)
+        tasks.sort(key=self.group_fn)
         gen = self.get_work_generator()
         with GracefulInterruptHandler(signal.SIGTERM, lambda: sys.exit(143)) as ih:
             for i, (key, group) in enumerate(groupby(tasks, key=self.group_fn)):
                 ih.safe_interrupt()
                 try:
                     if i != 0 and self.sleep: sleep(self.sleep)
-                    self.logger.info("Working on {}: {}".format(key, group))
                     group = list(group)
+                    self.logger.info("Working on {}: {}".format(key, group))
                     gen.send(dict(key=key, tasks=group, **self.work_kwargs))
                     for task in group:
                         self.finish(self.task_key_fn(task))
