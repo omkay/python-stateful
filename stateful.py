@@ -1,4 +1,6 @@
-import sqlalchemy, logging
+from sqlalchemy import MetaData, Table, Column, String, TIMESTAMP, create_engine
+from sqlalchemy.sql import text
+import logging
 from time import sleep
 import inspect, sys
 from itertools import groupby
@@ -42,21 +44,24 @@ class GracefulInterruptHandler(object):
 
 class Stateful(object):
     def __init__(self, engine, work_fn, table="state", logger=None, sleep=0, work_kwargs=None, group_fn=None, task_key_fn=None):
-        self.engine = sqlalchemy.create_engine(engine)
-        self.table = table
         self.logger = logger or logging.getLogger('stateful')
         self.sleep = sleep
         self.work_kwargs = work_kwargs or {}
         self.work_fn = work_fn
         self.group_fn = group_fn
         self.task_key_fn = task_key_fn or (lambda task: (task[0] if isinstance(task, tuple) else task))
-        self.engine.execute("CREATE TABLE IF NOT EXISTS {} (id VARCHAR(50) PRIMARY KEY, t TIMESTAMP DEFAULT CURRENT_TIMESTAMP)".format(self.table))
+
+        self.engine = create_engine(engine)
+        self.metadata = MetaData()
+        self.table = Table(table, self.metadata, Column('id', String(50), primary_key=True), Column('t', TIMESTAMP, server_default=text('CURRENT_TIMESTAMP')))
+        self.metadata.create_all(self.engine)
 
     def finish(self, id):
-        self.engine.execute('insert into {} (id) values (%s)'.format(self.table), id)
+        self.table.insert().values(id=id)
 
     def get_tasks(self):
-        return set([e[0] for e in self.engine.execute("select id from {}".format(self.table))])
+        stmt = self.table.select(self.table.c.id)
+        return set([e[0] for e in self.engine.execute(stmt).fetchall()])
 
     def get_work_generator(self):
         if inspect.isgeneratorfunction(self.work_fn):
