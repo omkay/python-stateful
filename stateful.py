@@ -53,15 +53,15 @@ class Stateful(object):
 
         self.engine = create_engine(engine)
         self.metadata = MetaData()
-        self.table = Table(table, self.metadata, Column('id', String(50), primary_key=True), Column('t', TIMESTAMP, server_default=text('CURRENT_TIMESTAMP')))
+        self.table = Table(table, self.metadata, Column('key', String(50), primary_key=True), Column('t', TIMESTAMP, server_default=text('CURRENT_TIMESTAMP')))
         self.metadata.create_all(self.engine)
 
-    def finish(self, id):
-        self.table.insert().values(id=id)
+    def finish(self, key):
+        self.engine.execute(self.table.insert().values(key=key))
 
     def get_tasks(self):
-        stmt = self.table.select(self.table.c.id)
-        return set([e[0] for e in self.engine.execute(stmt).fetchall()])
+        stmt = self.table.select()
+        return set([e.key for e in self.engine.execute(stmt).fetchall()])
 
     def get_work_generator(self):
         if inspect.isgeneratorfunction(self.work_fn):
