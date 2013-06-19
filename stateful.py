@@ -4,8 +4,8 @@ import inspect, sys
 
 def work_generator(fn):
     while True:
-        args = yield
-        fn(*args)
+        kwargs = yield
+        fn(**kwargs)
 
 
 import signal
@@ -40,12 +40,13 @@ class GracefulInterruptHandler(object):
         return True
 
 class Stateful(object):
-    def __init__(self, engine, work_fn, work_args=[], table="state", logger=None, sleep=0):
+    def __init__(self, engine, work_fn, table="state", logger=None, sleep=0, work_kwargs=None):
         self.engine = sqlalchemy.create_engine(engine)
         self.table = table
         self.logger = logger or logging.getLogger('stateful')
         self.sleep = sleep
-        self.work_fn, self.work_args = work_fn, work_args
+        self.work_kwargs = work_kwargs or {}
+        self.work_fn = work_fn
         self.engine.execute("CREATE TABLE IF NOT EXISTS %s (id VARCHAR(50) PRIMARY KEY, t TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" % self.table)
 
     def finish(self, id):
@@ -72,7 +73,7 @@ class Stateful(object):
                 try:
                     if i != 0 and self.sleep: sleep(self.sleep)
                     self.logger.info("Working on {}".format(task))
-                    gen.send([tasks[task]] + list(self.work_args))
+                    gen.send(dict(task=tasks[task], **self.work_kwargs))
                     self.finish(task)
                 except Exception:
                     self.logger.warn("Error while processing {}".format(task), exc_info=1)
