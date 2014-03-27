@@ -78,6 +78,7 @@ class Stateful(object):
 
     def worker_nogroup(self, tasks):
         gen = self.get_work_generator()
+        errors = []
         with GracefulInterruptHandler(signal.SIGTERM, lambda: sys.exit(143)) as ih:
             for i, task in enumerate(tasks):
                 ih.safe_interrupt()
@@ -88,13 +89,16 @@ class Stateful(object):
                     self.finish(self.task_key_fn(task))
                 except Exception:
                     self.logger.warn("Error while processing {}".format(task), exc_info=1)
+                    errors.append(task)
                     gen = self.get_work_generator()
                     ih.safe_interrupt()
                     sleep(self.sleep*2 or 10)
+        return errors
 
     def worker_group(self, tasks):
         tasks.sort(key=self.group_fn)
         gen = self.get_work_generator()
+        errors = []
         with GracefulInterruptHandler(signal.SIGTERM, lambda: sys.exit(143)) as ih:
             for i, (key, group) in enumerate(groupby(tasks, key=self.group_fn)):
                 ih.safe_interrupt()
@@ -107,7 +111,9 @@ class Stateful(object):
                         self.finish(self.task_key_fn(task))
                 except Exception:
                     self.logger.warn("Error while processing {}: {}".format(key, group), exc_info=1)
+                    errors.append(task)
                     gen = self.get_work_generator()
                     ih.safe_interrupt()
                     sleep(self.sleep*2 or 10)
+        return errors
 
