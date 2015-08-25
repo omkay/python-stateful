@@ -1,15 +1,10 @@
 from sqlalchemy import MetaData, Table, Column, String, TIMESTAMP, create_engine
 from sqlalchemy.sql import text
 import logging
-from time import sleep
-import inspect, sys
+import time
+import sys
 from itertools import groupby
-
-def work_generator(fn):
-    while True:
-        kwargs = yield
-        fn(**kwargs)
-
+import namutil
 
 import signal
 class GracefulInterruptHandler(object):
@@ -59,61 +54,62 @@ class Stateful(object):
     def finish(self, key):
         self.engine.execute(self.table.insert().values(key=key))
 
-    def get_tasks(self):
-        stmt = self.table.select()
-        return set([e.key for e in self.engine.execute(stmt).fetchall()])
-
-    def get_work_generator(self):
-        if inspect.isgeneratorfunction(self.work_fn):
-            gen = self.work_fn()
-        else: gen = work_generator(self.work_fn)
-        gen.send(None)
-        return gen
+    def filter_tasks(self, tasks_list):
+        tasks_list = list(tasks_list)
+        task_keys = [self.task_key_fn(task) for task in tasks_list]
+        finished_tasks = set([r['key'] for r in namutil.get_results_as_dict(self.engine, "SELECT `key` FROM `{table}` WHERE `key` IN :key_list", table=self.table.name, key_list=task_keys)])
+        return [task for task in tasks_list if self.task_key_fn(task) not in finished_tasks]
 
     def work(self, tasks_list):
-        finished_tasks = self.get_tasks()
-        tasks = [task for task in tasks_list if self.task_key_fn(task) not in finished_tasks]
+        tasks = self.filter_tasks(tasks_list)
         fn = self.worker_group if callable(self.group_fn) else self.worker_nogroup
         return fn(tasks)
 
+    def work_one(self, task, sleep=True):
+        try:
+            self.logger.info("Working on {}".format(task))
+            self.work_fn(task=task, **self.work_kwargs)
+            self.finish(self.task_key_fn(task))
+        except Exception:
+            self.logger.warn("Error while processing {}".format(task), exc_info=1)
+            if sleep:
+                time.sleep(self.sleep*2 or 10)
+            return task
+
     def worker_nogroup(self, tasks):
-        gen = self.get_work_generator()
         errors = []
         with GracefulInterruptHandler(signal.SIGTERM, lambda: sys.exit(143)) as ih:
             for i, task in enumerate(tasks):
                 ih.safe_interrupt()
                 try:
-                    if i != 0 and self.sleep: sleep(self.sleep)
+                    if i != 0 and self.sleep: time.sleep(self.sleep)
                     self.logger.info("Working on {}".format(task))
-                    gen.send(dict(task=task, **self.work_kwargs))
+                    self.work_fn(task=task, **self.work_kwargs)
                     self.finish(self.task_key_fn(task))
                 except Exception:
                     self.logger.warn("Error while processing {}".format(task), exc_info=1)
                     errors.append(task)
-                    gen = self.get_work_generator()
                     ih.safe_interrupt()
-                    sleep(self.sleep*2 or 10)
+                    time.sleep(self.sleep*2 or 10)
         return errors
 
     def worker_group(self, tasks):
         tasks.sort(key=self.group_fn)
-        gen = self.get_work_generator()
         errors = []
         with GracefulInterruptHandler(signal.SIGTERM, lambda: sys.exit(143)) as ih:
             for i, (key, group) in enumerate(groupby(tasks, key=self.group_fn)):
                 ih.safe_interrupt()
                 try:
-                    if i != 0 and self.sleep: sleep(self.sleep)
+                    if i != 0 and self.sleep: time.sleep(self.sleep)
                     group = list(group)
                     self.logger.info("Working on {}: {}".format(key, group))
-                    gen.send(dict(key=key, tasks=group, **self.work_kwargs))
+                    self.work_fn(key=key, tasks=group, **self.work_kwargs)
                     for task in group:
                         self.finish(self.task_key_fn(task))
                 except Exception:
                     self.logger.warn("Error while processing {}: {}".format(key, group), exc_info=1)
                     errors.append(task)
-                    gen = self.get_work_generator()
                     ih.safe_interrupt()
-                    sleep(self.sleep*2 or 10)
+                    time.sleep(self.sleep*2 or 10)
         return errors
 
