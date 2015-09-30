@@ -65,16 +65,10 @@ class Stateful(object):
         fn = self.worker_group if callable(self.group_fn) else self.worker_nogroup
         return fn(tasks)
 
-    def work_one(self, task, sleep=True):
-        try:
-            self.logger.info("Working on {}".format(task))
-            self.work_fn(task=task, **self.work_kwargs)
-            self.finish(self.task_key_fn(task))
-        except Exception:
-            self.logger.warn("Error while processing {}".format(task), exc_info=1)
-            if sleep:
-                time.sleep(self.sleep*2 or 10)
-            return task
+    def work_one(self, task):
+        self.logger.info("Working on {}".format(task))
+        self.work_fn(task=task, **self.work_kwargs)
+        self.finish(self.task_key_fn(task))
 
     def worker_nogroup(self, tasks):
         errors = []
