@@ -57,7 +57,9 @@ class Stateful(object):
     def filter_tasks(self, tasks_list):
         tasks_list = list(tasks_list)
         task_keys = [self.task_key_fn(task) for task in tasks_list]
-        finished_tasks = set([r['key'] for r in namutil.get_results_as_dict(self.engine, "SELECT `key` FROM `{table}` WHERE `key` IN :key_list", table=self.table.name, key_list=task_keys)])
+        finished_tasks = set()
+        for group in namutil.grouper(100, task_keys):
+            finished_tasks.update([r['key'] for r in namutil.get_results_as_dict(self.engine, "SELECT `key` FROM `{table}` WHERE `key` IN :key_list", table=self.table.name, key_list=group)])
         return [task for task in tasks_list if self.task_key_fn(task) not in finished_tasks]
 
     def work(self, tasks_list):
