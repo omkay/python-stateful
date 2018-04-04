@@ -3,6 +3,8 @@ from sqlalchemy.sql import text
 import logging
 import time
 import sys
+reload(sys)  
+sys.setdefaultencoding('utf-8')
 from itertools import groupby
 import namutil
 
