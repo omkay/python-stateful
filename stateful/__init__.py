@@ -60,6 +60,7 @@ class Stateful(object):
         finished_tasks = set()
         for group in namutil.grouper(100, task_keys):
             finished_tasks.update([r['key'] for r in namutil.get_results_as_dict(self.engine, "SELECT `key` FROM `{table}` WHERE `key` IN :key_list", table=self.table.name, key_list=group)])
+            self.logger.info("finished tasks are: {}".format(list(finished_tasks)))
         return [task for task in tasks_list if self.task_key_fn(task) not in finished_tasks]
 
     def work(self, tasks_list):
